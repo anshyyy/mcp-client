@@ -13,9 +13,11 @@
   "description": "",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "dotenv": "^16.5.0",
     "openai": "^5.1.0",
+    "winston": "^3.17.0",
     "zod": "^3.25.51"
   },
   "devDependencies": {
