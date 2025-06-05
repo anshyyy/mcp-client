@@ -28,10 +28,31 @@ export class GoogleProvider implements ILLMProvider {
         toolCount: tools?.length ?? 0,
       });
 
-      const model = this.client.getGenerativeModel({ model: this.config.model });
+      const model = this.client.getGenerativeModel({ 
+        model: this.config.model
+      });
+      
+      // Add tool descriptions to the system message if tools are available
+      let enhancedMessages = [...messages];
+      if (tools && tools.length > 0) {
+        const toolDescriptions = this.formatToolsAsPrompt(tools);
+        const systemMessage = enhancedMessages.find(m => m.role === 'system');
+        if (systemMessage) {
+          enhancedMessages = enhancedMessages.map(m => 
+            m.role === 'system' 
+              ? { ...m, content: `${m.content}\n\n${toolDescriptions}` }
+              : m
+          );
+        } else {
+          enhancedMessages = [
+            { role: 'system', content: toolDescriptions },
+            ...enhancedMessages
+          ];
+        }
+      }
       
       const chat = model.startChat({
-        history: messages.slice(0, -1).map(msg => ({
+        history: enhancedMessages.slice(0, -1).map(msg => ({
           role: msg.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: msg.content }],
         })),
@@ -41,7 +62,7 @@ export class GoogleProvider implements ILLMProvider {
         },
       });
 
-      const lastMessage = messages[messages.length - 1];
+      const lastMessage = enhancedMessages[enhancedMessages.length - 1];
       if (!lastMessage) {
         throw new LLMProviderError('No messages provided', 'google');
       }
@@ -77,5 +98,13 @@ export class GoogleProvider implements ILLMProvider {
         parameters: tool.inputSchema,
       },
     }));
+  }
+
+  private formatToolsAsPrompt(tools: readonly Tool[]): string {
+    const toolList = tools.map(tool => 
+      `- ${tool.function.name}: ${tool.function.description}`
+    ).join('\n');
+    
+    return `Available tools:\n${toolList}\n\nWhen you need to use a tool, mention it clearly in your response.`;
   }
 }

@@ -32,12 +32,22 @@ export class OpenAIProvider implements ILLMProvider {
 
       const response = await this.client.chat.completions.create({
         model: this.config.model,
-        messages: messages.map(msg => ({
-          role: msg.role,
-          content: msg.content,
-          ...(msg.toolCalls && { tool_calls: msg.toolCalls }),
-          ...(msg.toolCallId && { tool_call_id: msg.toolCallId }),
-        })),
+        messages: messages.map(msg => {
+          const baseMessage: any = {
+            role: msg.role,
+            content: msg.content,
+          };
+          
+          if (msg.toolCalls) {
+            baseMessage.tool_calls = msg.toolCalls;
+          }
+          
+          if (msg.toolCallId) {
+            baseMessage.tool_call_id = msg.toolCallId;
+          }
+          
+          return baseMessage;
+        }),
         tools: tools ? [...tools] : undefined,
         tool_choice: tools ? 'auto' : undefined,
         temperature: this.config.temperature ?? 0.7,
