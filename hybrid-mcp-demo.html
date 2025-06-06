@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🌐 Hybrid MCP Architecture Demo</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            padding: 20px; 
+            max-width: 1200px; 
+            margin: 0 auto;
+        }
+        .section { 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            border-radius: 8px; 
+            padding: 20px; 
+            margin: 20px 0; 
+        }
+        .backend { border-left: 5px solid #007bff; }
+        .frontend { border-left: 5px solid #28a745; }
+        .result { 
+            padding: 10px; 
+            margin: 10px 0; 
+            border-radius: 5px; 
+            background: #fff;
+            border: 1px solid #ddd;
+        }
+        .success { border-left: 4px solid #28a745; }
+        .error { border-left: 4px solid #dc3545; }
+        button { 
+            padding: 10px 20px; 
+            margin: 5px; 
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .backend-btn { background: #007bff; color: white; }
+        .frontend-btn { background: #28a745; color: white; }
+        .demo-btn { background: #17a2b8; color: white; }
+        button:hover { opacity: 0.8; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        pre { 
+            background: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 3px; 
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .status { padding: 10px; border-radius: 5px; margin: 10px 0; text-align: center; font-weight: bold; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .tool-list { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 20px; 
+            margin: 20px 0;
+        }
+        .tool-item {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .tool-name { font-weight: bold; color: #333; }
+        .tool-desc { color: #666; font-size: 14px; margin: 5px 0; }
+        .tool-context { 
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .context-backend { background: #007bff; }
+        .context-frontend { background: #28a745; }
+    </style>
+</head>
+<body>
+    <h1>🌐 Hybrid MCP Architecture Demo</h1>
+    <p>This demo showcases the hybrid MCP architecture where tools can run in both backend and frontend contexts.</p>
+    
+    <div id="status" class="status disconnected">
+        Initializing...
+    </div>
+
+    <div class="section">
+        <h2>🔧 Setup</h2>
+        <div>
+            <label for="token">API Token:</label><br>
+            <input type="text" id="token" style="width: 500px;" placeholder="Paste your API token here">
+            <button onclick="connectToAPI()" class="demo-btn">Connect</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🛠️ Available Tools</h2>
+        <button onclick="loadTools()" class="demo-btn">Refresh Tools</button>
+        <div id="tools-container"></div>
+    </div>
+
+    <div class="tool-list">
+        <div class="section backend">
+            <h3>🖥️ Backend MCP Tools</h3>
+            <p>These tools run on the server and have access to the local filesystem:</p>
+            <button onclick="testBackendTool('list_allowed_directories', {})" class="backend-btn">
+                List Allowed Directories
+            </button>
+            <button onclick="testBackendTool('read_file', {path: 'package.json'})" class="backend-btn">
+                Read package.json
+            </button>
+            <button onclick="testBackendTool('list_directory', {path: '.'})" class="backend-btn">
+                List Current Directory
+            </button>
+        </div>
+
+        <div class="section frontend">
+            <h3>🌐 Frontend MCP Tools</h3>
+            <p>These tools run in the browser and have access to DOM/browser APIs:</p>
+            <button onclick="testFrontendTool('get_page_info', {})" class="frontend-btn">
+                Get Page Info
+            </button>
+            <button onclick="testFrontendTool('get_page_content', {})" class="frontend-btn">
+                Get Page Content
+            </button>
+            <button onclick="testFrontendTool('query_elements', {selector: 'button', attributes: ['class', 'onclick']})" class="frontend-btn">
+                Query Buttons
+            </button>
+            <button onclick="testFrontendTool('execute_script', {script: 'return new Date().toISOString()'})" class="frontend-btn">
+                Execute Script (Get Current Time)
+            </button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>💬 Chat with LLM + Tools</h2>
+        <div>
+            <select id="provider-select">
+                <option value="">Select LLM Provider...</option>
+            </select>
+            <br><br>
+            <textarea id="message-input" rows="3" style="width: 100%;" 
+                placeholder="Ask me to use tools! Try: 'What's in my current directory?' or 'What's the title of this webpage?'"></textarea>
+            <br>
+            <button onclick="sendChatMessage()" class="demo-btn" id="send-btn" disabled>Send Message</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📋 Results</h2>
+        <button onclick="clearResults()" class="demo-btn">Clear Results</button>
+        <div id="results"></div>
+    </div>
+
+    <script src="chrome-extension-client/frontend-mcp-server.js"></script>
+    <script src="chrome-extension-client/mcp-client.js"></script>
+    <script>
+        let mcpClient;
+        let isConnected = false;
+
+        // Initialize everything
+        async function init() {
+            mcpClient = new MCPClient();
+            
+            // Initialize frontend MCP servers
+            await mcpClient.initializeFrontendMCP();
+            
+            // Set default token
+            document.getElementById('token').value = '9e74f9122e3a5cc74284b51cdbafe4bb0de28c79a5b365fa6e6c8c281e85258a';
+            
+            updateStatus('Ready to connect');
+        }
+
+        async function connectToAPI() {
+            const token = document.getElementById('token').value.trim();
+            if (!token) {
+                addResult('❌ Please enter an API token', 'error');
+                return;
+            }
+
+            try {
+                mcpClient.setAuthToken(token);
+                
+                const health = await mcpClient.checkHealth();
+                updateStatus('Connected - Server ' + (health.initialized ? 'Ready' : 'Initializing'));
+                
+                if (!health.initialized) {
+                    await mcpClient.initialize();
+                    updateStatus('Connected - Server Ready');
+                }
+                
+                isConnected = true;
+                await loadProviders();
+                await loadTools();
+                
+                addResult('✅ Successfully connected to MCP API', 'success');
+                
+            } catch (error) {
+                updateStatus('Connection Failed');
+                addResult(`❌ Connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadProviders() {
+            if (!isConnected) return;
+            
+            try {
+                const response = await mcpClient.getProviders();
+                const select = document.getElementById('provider-select');
+                
+                // Clear existing options except first
+                while (select.children.length > 1) {
+                    select.removeChild(select.lastChild);
+                }
+                
+                response.providers.forEach(provider => {
+                    const option = document.createElement('option');
+                    option.value = provider;
+                    option.textContent = provider;
+                    select.appendChild(option);
+                });
+                
+                updateSendButton();
+                
+            } catch (error) {
+                addResult(`❌ Failed to load providers: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadTools() {
+            if (!isConnected) return;
+            
+            try {
+                const tools = await mcpClient.getAllTools();
+                const container = document.getElementById('tools-container');
+                
+                const backendTools = tools.filter(t => t.context === 'backend');
+                const frontendTools = tools.filter(t => t.context === 'frontend');
+                
+                container.innerHTML = `
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+                        <div>
+                            <h4>🖥️ Backend Tools (${backendTools.length})</h4>
+                            ${backendTools.map(tool => `
+                                <div class="tool-item">
+                                    <div class="tool-name">${tool.name}</div>
+                                    <div class="tool-desc">${tool.description}</div>
+                                    <span class="tool-context context-backend">BACKEND</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div>
+                            <h4>🌐 Frontend Tools (${frontendTools.length})</h4>
+                            ${frontendTools.map(tool => `
+                                <div class="tool-item">
+                                    <div class="tool-name">${tool.name}</div>
+                                    <div class="tool-desc">${tool.description}</div>
+                                    <span class="tool-context context-frontend">FRONTEND</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                
+                addResult(`✅ Loaded ${tools.length} tools (${backendTools.length} backend, ${frontendTools.length} frontend)`, 'success');
+                
+            } catch (error) {
+                addResult(`❌ Failed to load tools: ${error.message}`, 'error');
+            }
+        }
+
+        async function testBackendTool(toolName, args) {
+            addResult(`🖥️ Testing backend tool: ${toolName}`, 'info');
+            try {
+                const result = await mcpClient.executeTool(toolName, args);
+                addResult(`✅ Backend tool result:`, 'success');
+                addResult(`<pre>${JSON.stringify(result, null, 2)}</pre>`, 'info');
+            } catch (error) {
+                addResult(`❌ Backend tool failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testFrontendTool(toolName, args) {
+            addResult(`🌐 Testing frontend tool: ${toolName}`, 'info');
+            try {
+                const result = await mcpClient.executeTool(toolName, args);
+                addResult(`✅ Frontend tool result:`, 'success');
+                addResult(`<pre>${JSON.stringify(result, null, 2)}</pre>`, 'info');
+            } catch (error) {
+                addResult(`❌ Frontend tool failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendChatMessage() {
+            const provider = document.getElementById('provider-select').value;
+            const message = document.getElementById('message-input').value.trim();
+            
+            if (!provider || !message) return;
+            
+            const sendBtn = document.getElementById('send-btn');
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+            
+            try {
+                addResult(`💬 Chatting with ${provider}...`, 'info');
+                addResult(`👤 User: ${message}`, 'info');
+                
+                const result = await mcpClient.simplifiedChat(provider, message);
+                
+                addResult(`🤖 ${provider}: ${result.response.content}`, 'success');
+                
+                document.getElementById('message-input').value = '';
+                
+            } catch (error) {
+                addResult(`❌ Chat failed: ${error.message}`, 'error');
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send Message';
+                updateSendButton();
+            }
+        }
+
+        function updateSendButton() {
+            const sendBtn = document.getElementById('send-btn');
+            const provider = document.getElementById('provider-select').value;
+            const message = document.getElementById('message-input').value.trim();
+            
+            sendBtn.disabled = !isConnected || !provider || !message;
+        }
+
+        function updateStatus(text) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = isConnected ? 'status connected' : 'status disconnected';
+        }
+
+        function addResult(message, type) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = message;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Event listeners
+        document.getElementById('provider-select').addEventListener('change', updateSendButton);
+        document.getElementById('message-input').addEventListener('input', updateSendButton);
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!document.getElementById('send-btn').disabled) {
+                    sendChatMessage();
+                }
+            }
+        });
+
+        // Initialize on page load
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html> 
